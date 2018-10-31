@@ -11,6 +11,7 @@ from django.core.exceptions import PermissionDenied
 from django.core.urlresolvers import reverse, NoReverseMatch
 from django.db import transaction
 from django.db.models import F
+from django.db.utils import NotSupportedError
 from django.http import Http404, HttpResponseRedirect, HttpResponse
 from django.utils.encoding import force_text
 from django.utils.html import escape
@@ -477,7 +478,10 @@ class PublishingAdmin(ModelAdmin, _PublishingHelpersMixin):
         # Enforce DB-level locking of the object with `select_for_update` to
         # avoid data consistency issues caused by multiple simultaneous form
         # submission (e.g. by a user who double-clicks form buttons).
-        obj = self.model.objects.select_for_update().get(pk=object_id)
+        try:
+            obj = self.model.objects.select_for_update().get(pk=object_id)
+        except NotSupportedError:
+            obj = self.model.objects.get(pk=object_id)
 
         if not self.has_change_permission(request, obj):
             raise PermissionDenied
