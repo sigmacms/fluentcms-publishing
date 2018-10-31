@@ -7,8 +7,9 @@
 <style>
   /* style publish links to look like other buttons */
   .submit-row a.button {
-  margin: 0 0 0 5px;
-  padding: 3px 5px;
+  margin: 0 0 0 8px;
+  padding: 10px 15px;
+  line-height: 15px;
   }
   /* hide fluent's "status" field which is obsoleted (TODO: actually remove it from the form/model) */
   fieldset .form-row.field-status {
@@ -21,10 +22,10 @@
   <div class="submit-row">
     {% if has_publish_permission %}
       {% if publish_btn %}
-        <a href="{{ publish_btn }}" class="button default">{% trans 'Publish' %}</a>
+        <input type="submit" value="{% trans 'Publish' %}" class="default" name="_publish" />
       {% endif %}
       {% if unpublish_btn %}
-        <a href="{{ unpublish_btn }}" class="button default">{% trans 'Unpublish' %}</a>
+        <input type="submit" value="{% trans 'Unpublish' %}" class="default" name="_unpublish" />
       {% endif %}
     {% else %}
       <input type="submit" value="{% trans 'Save' %}" class="default" name="_save" />

@@ -108,12 +108,8 @@ class TestPublishingAdmin(AdminTest):
                     args=(self.model.pk, )),
             user=self.staff)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            reverse('admin:fluentcms_publishing_modelm_publish',
-                    args=(self.model.pk, )) in response.text)
-        self.assertFalse(
-            reverse('admin:fluentcms_publishing_modelm_unpublish',
-                    args=(self.model.pk, )) in response.text)
+        self.assertTrue([f for f in response.text.split('\n') if 'submit' in f if '_publish' in f])
+        self.assertFalse([f for f in response.text.split('\n') if 'submit' in f if '_unpublish' in f])
 
         # Publish via admin
         self.admin_publish_item(self.model, user=self.staff)
@@ -128,12 +124,8 @@ class TestPublishingAdmin(AdminTest):
                     args=(self.model.pk, )),
             user=self.staff)
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(
-            reverse('admin:fluentcms_publishing_modelm_publish',
-                    args=(self.model.pk, )) in response.text)
-        self.assertTrue(
-            reverse('admin:fluentcms_publishing_modelm_unpublish',
-                    args=(self.model.pk, )) in response.text)
+        self.assertFalse([f for f in response.text.split('\n') if 'submit' in f if '_publish' in f])
+        self.assertTrue([f for f in response.text.split('\n') if 'submit' in f if '_unpublish' in f])
 
         # Publish again
         self.model.title += ' - changed'
@@ -155,12 +147,157 @@ class TestPublishingAdmin(AdminTest):
                     args=(self.model.pk, )),
             user=self.staff)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(
-            reverse('admin:fluentcms_publishing_modelm_publish',
-                    args=(self.model.pk, )) in response.text)
-        self.assertFalse(
-            reverse('admin:fluentcms_publishing_modelm_unpublish',
-                    args=(self.model.pk, )) in response.text)
+        self.assertTrue([f for f in response.text.split('\n') if 'submit' in f if '_publish' in f])
+        self.assertFalse([f for f in response.text.split('\n') if 'submit' in f if '_unpublish' in f])
+
+
+class TestPublishingAdminForPage(AdminTest):
+
+    def setUp(self):
+        self.ct = self.ct_for_model(Page)
+        self.admin = G(
+            User,
+            is_staff=True,
+            is_active=True,
+            is_superuser=True,
+        )
+        self.layout = G(
+            PageLayout,
+            template_path='default.html',
+        )
+        self.page = Page.objects.create(
+            author=self.admin,
+            title='Hello, world!',
+            slug='hello-world',
+            layout=self.layout,
+        )
+        self.content_instance = create_content_instance(
+            RawHtmlItem,
+            self.page,
+            placeholder_name='content',
+            html='<b>lorem ipsum dolor sit amet...</b>'
+        )
+        # Generate URL paths/links to test
+        self.admin_add_page_url = reverse(
+            'admin:fluentpage_fluentpage_add')
+        self.admin_change_page_url = reverse(
+            'admin:fluentpage_fluentpage_change',
+            args=(self.page.pk, ))
+
+    def test_admin_monkey_patch_slug_duplicates(self):
+        # Test our monkey patch works to fix duplicate `slug` field errors
+        # caused by draft and published copies of the same item sharing a slug.
+
+        # Confirm we have a draft publishable item that has a slug field
+        self.assertEqual('hello-world', self.page.slug)
+        self.assertIsNone(self.page.publishing_linked)
+
+        # Publish item via admin with same slug
+        self.admin_publish_item(self.page, user=self.admin)
+        self.page = self.refresh(self.page)
+        self.assertIsNotNone(self.page.publishing_linked)
+        self.assertEqual(
+            'hello-world', self.page.get_published().slug)
+
+        # Confirm we can update draft version via admin with shared slug
+        response = self.app.get(
+            self.admin_change_page_url,
+            user=self.admin)
+        self.assertEqual(response.status_code, 200)
+        form = response.forms['fluentpage_form']
+        form['title'].value = 'O hai, world!'
+        response = form.submit('_continue', user=self.admin)
+        self.assertNotContains(
+            response, 'This slug is already used by an other page at the same level', status_code=302,
+        )
+        self.layoutpage = self.refresh(self.page)
+        self.assertEqual('hello-world', self.page.slug)
+        self.assertEqual('O hai, world!', self.page.title)
+
+        # Confirm we can re-publish draft version via admin with shared slug
+        self.admin_publish_item(self.page, user=self.admin)
+        self.page = self.refresh(self.page)
+        self.assertIsNotNone(self.page.publishing_linked)
+        self.assertEqual(
+            'hello-world', self.page.get_published().slug)
+        self.assertEqual(
+            'O hai, world!', self.page.get_published().title)
+
+        # Confirm we cannot create a different item via admin with same slug
+        response = self.app.get(
+            self.admin_add_page_url,
+            user=self.admin)
+        form = response.forms['page_form']
+        form['ct_id'].select(self.ct.pk)  # Choose Page page type
+        response = form.submit(user=self.admin).follow()
+        self.assertNotContains(response, 'error')
+        form = response.forms['fluentpage_form']
+        form['layout'].select(self.layout.pk)
+        form['title'] = 'O hai, world'
+        form['slug'] = self.page.slug  # Same slug as existing page
+        response = form.submit('_continue', user=self.admin)
+        self.assertContains(
+            response, 'This slug is already used by an other page at the same level',
+        )
+
+    def test_admin_monkey_patch_override_url_duplicates(self):
+        # Test our monkey patch works to fix duplicate `override_url` field
+        # errors caused by draft and published copies of the same item sharing
+        # an override URL.
+
+        # Add override URL to item
+        self.page.override_url = '/'
+        self.page.save()
+
+        # Publish item via admin with same override URL
+        self.admin_publish_item(self.page, user=self.admin)
+        self.page = self.refresh(self.page)
+        self.assertIsNotNone(self.page.publishing_linked)
+        self.assertEqual(
+            '/', self.page.get_published().override_url)
+
+        # Confirm we can update draft version via admin with same override URL
+        response = self.app.get(
+            self.admin_change_page_url,
+            user=self.admin)
+        self.assertEqual(response.status_code, 200)
+        form = response.forms['fluentpage_form']
+        form['title'].value = 'O hai, world!'
+        response = form.submit('_continue', user=self.admin)
+        self.assertNotContains(
+            response, 'This URL is already taken by an other page.', status_code=302,
+        )
+        self.page = self.refresh(self.page)
+        self.assertEqual('/', self.page.override_url)
+        self.assertEqual('O hai, world!', self.page.title)
+
+        # Confirm we can re-publish draft version via admin with same override
+        self.admin_publish_item(self.page, user=self.admin)
+        self.page = self.refresh(self.page)
+        self.assertIsNotNone(self.page.publishing_linked)
+        self.assertEqual(
+            '/', self.page.get_published().override_url)
+        self.assertEqual(
+            'O hai, world!', self.page.get_published().title)
+
+        # Confirm we cannot create a different item via admin with same
+        # override URL
+        response = self.app.get(
+            self.admin_add_page_url,
+            user=self.admin)
+        form = response.forms['page_form']
+        form['ct_id'].select(self.ct.pk)  # Choose Page page type
+        response = form.submit(user=self.admin).follow()
+        self.assertNotContains(response, 'error')
+        form = response.forms['fluentpage_form']
+        form['layout'].select(self.layout.pk)
+        form['title'] = 'O hai, world!'
+        form['slug'] = 'o-hai-woorld'
+        form['override_url'] = self.page.override_url  # Same override
+        response = form.submit('_continue', user=self.admin)
+        self.assertContains(
+            response, 'This URL is already taken by an other page.',
+        )
 
 
 @modify_settings(MIDDLEWARE_CLASSES={'append': 'fluentcms_publishing.middleware.PublishingMiddleware'})
