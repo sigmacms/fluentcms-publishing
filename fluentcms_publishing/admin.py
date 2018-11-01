@@ -527,14 +527,15 @@ class PublishingAdmin(_PublishingHelpersMixin, ModelAdmin):
 
         return publish_urls + urls
 
-    @transaction.atomic
     def get_model_object(self, request, object_id):
         # Enforce DB-level locking of the object with `select_for_update` to
         # avoid data consistency issues caused by multiple simultaneous form
         # submission (e.g. by a user who double-clicks form buttons).
         try:
-            obj = self.model.objects.select_for_update().get(pk=object_id)
+            with transaction.atomic():
+                obj = self.model.objects.select_for_update().get(pk=object_id)
         except NotSupportedError:
+            # The above statement can fail with certain models, so we perform the steatement
             obj = self.model.objects.get(pk=object_id)
 
         if not self.has_change_permission(request, obj):
