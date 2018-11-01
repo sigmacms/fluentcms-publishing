@@ -11,7 +11,7 @@ class PublishingViewMixin(object):
 
     def get_queryset(self):
         return self.model.objects.filter(
-            publishing_is_draft=is_draft_request_context).all()
+            publishing_is_draft=is_draft_request_context()).all()
 
 
 class PublishingDetailView(PublishingViewMixin, DetailView):
