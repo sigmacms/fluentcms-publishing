@@ -5,7 +5,7 @@ from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import models, transaction
 from django.dispatch import receiver
 from django.utils import timezone
 
@@ -355,12 +355,54 @@ class PublishingModel(models.Model):
                 sender=type(self), instance=self)
 
     @assert_draft
+    @transaction.atomic
     def revert_to_public(self):
         """
         Revert draft instance to the last published instance.
         """
-        raise Exception(
-            "TODO: Re-implement revert-to-public without reversion?")
+        if not self.publishing_linked:
+            return
+
+        # Get original draft and published objects
+        draft_obj = self
+        publish_obj = self.publishing_linked
+
+        # Store the original draft_obj pk so we can use it later
+        original_draft_obj_pk = draft_obj.pk
+
+        # Delete the original draft_obj
+        draft_obj.publishing_linked = None
+        draft_obj.save()
+        draft_obj.delete()
+
+        # Store the publish_obj model and pk before so we can get it later
+        publish_obj_model = publish_obj._meta.model
+        publish_obj_pk = publish_obj.pk
+
+        # Set the pk to original draft_obj pk to create new obj, clear
+        # publishing_linked, mark it as a draft and save it to create a new
+        # draft object that is an exact copy of the published object
+        publish_obj.pk = original_draft_obj_pk
+        publish_obj.publishing_linked = None
+        publish_obj.publishing_is_draft = True
+        publish_obj.save()
+
+        # Get the new draft_obj and the original publish_obj, set
+        # publishing_linked for both and save both
+        new_draft_obj = publish_obj
+        original_publish_obj = publish_obj_model.objects.get(
+            pk=publish_obj_pk
+        )
+        new_draft_obj.publishing_linked = original_publish_obj
+        original_publish_obj.publishing_linked = new_draft_obj
+        new_draft_obj.save()
+        original_publish_obj.save()
+
+        # Recreate m2m links for new_draft_obj, using original_publish_obj as
+        # source_obj
+        new_draft_obj.publishing_clone_relations(original_publish_obj)
+
+        return new_draft_obj
 
     def publishing_prepare_published_copy(self, draft_obj):
         """ Prepare published copy of draft prior to saving it """
