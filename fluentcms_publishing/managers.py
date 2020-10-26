@@ -8,7 +8,7 @@ try:
 except ImportError:
     BaseIterable = object
 
-from polymorphic.manager import PolymorphicManager
+from polymorphic.managers import PolymorphicManager
 from polymorphic.query import PolymorphicQuerySet
 
 from fluent_pages.models.managers import UrlNodeQuerySet, UrlNodeManager

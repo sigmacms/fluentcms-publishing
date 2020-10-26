@@ -2,7 +2,7 @@ import inspect
 from contextlib import contextmanager
 from threading import current_thread
 
-from django.core.urlresolvers import Resolver404, resolve
+from django.urls import Resolver404, resolve
 from django.http import HttpResponseRedirect
 
 from .utils import get_draft_url, verify_draft_url

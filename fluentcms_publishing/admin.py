@@ -9,7 +9,7 @@ from django.contrib.admin.utils import quote
 from django.conf import settings
 from django.conf.urls import url
 from django.core.exceptions import PermissionDenied
-from django.core.urlresolvers import reverse, NoReverseMatch
+from django.urls import reverse, NoReverseMatch
 from django.db import transaction
 from django.db.models import F
 from django.db.utils import NotSupportedError
